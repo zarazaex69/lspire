@@ -1,6 +1,6 @@
 use bevy::prelude::*;
-use rodio::{OutputStream, Sink, Source};
-use std::sync::{Arc, Mutex};
+use rodio::{OutputStream, OutputStreamHandle, Sink, Source};
+use std::sync::Arc;
 use std::time::Duration;
 
 pub struct AudioPlugin;
@@ -14,9 +14,12 @@ impl Plugin for AudioPlugin {
 
 #[derive(Resource)]
 pub struct AudioSystem {
-    _stream: OutputStream,
-    sink: Arc<Mutex<Sink>>,
+    _stream: Arc<OutputStream>,
+    stream_handle: Arc<OutputStreamHandle>,
 }
+
+unsafe impl Send for AudioSystem {}
+unsafe impl Sync for AudioSystem {}
 
 #[derive(Resource)]
 struct FootstepTimer {
@@ -35,11 +38,10 @@ impl Default for FootstepTimer {
 
 fn setup_audio(mut commands: Commands) {
     let (stream, stream_handle) = OutputStream::try_default().unwrap();
-    let sink = Sink::try_new(&stream_handle).unwrap();
     
     commands.insert_resource(AudioSystem {
-        _stream: stream,
-        sink: Arc::new(Mutex::new(sink)),
+        _stream: Arc::new(stream),
+        stream_handle: Arc::new(stream_handle),
     });
     
     commands.insert_resource(FootstepTimer::default());
@@ -73,15 +75,16 @@ fn handle_footsteps(
     timer_res.timer.tick(time.delta());
 
     if timer_res.timer.just_finished() {
-        play_footstep_sound(&audio.sink, speed_factor);
+        play_footstep_sound(&audio.stream_handle, speed_factor);
     }
 }
 
-fn play_footstep_sound(sink: &Arc<Mutex<Sink>>, speed_factor: f32) {
+fn play_footstep_sound(stream_handle: &OutputStreamHandle, speed_factor: f32) {
     let sound = generate_footstep_sound(speed_factor);
     
-    if let Ok(sink) = sink.lock() {
+    if let Ok(sink) = Sink::try_new(stream_handle) {
         sink.append(sound);
+        sink.detach();
     }
 }
 
@@ -143,7 +146,7 @@ fn generate_footstep_sound(speed_factor: f32) -> FootstepSound {
         let envelope = (1.0 - (t / duration)).powf(2.0);
         
         let tone = (2.0 * std::f32::consts::PI * base_freq * t).sin() * 0.3;
-        let noise = (rng.gen::<f32>() * 2.0 - 1.0) * noise_amount;
+        let noise = (rng.r#gen::<f32>() * 2.0 - 1.0) * noise_amount;
         
         let sample = (tone + noise) * envelope * 0.15;
         samples.push(sample);
