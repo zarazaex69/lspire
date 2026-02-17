@@ -8,7 +8,7 @@ mod audio;
 mod input;
 mod ui;
 
-use world::ChunkManager;
+use world::{ChunkManager, WorldState, WeatherState};
 use rendering::{InstancedRenderer, grayscale, FogSettings};
 use physics::{Player, PlayerController};
 use input::InputState;
@@ -37,6 +37,7 @@ struct GameState {
     target_fov: f32,
     fov_transition_speed: f32,
     fog_settings: FogSettings,
+    world_state: WorldState,
 }
 
 impl GameState {
@@ -54,6 +55,7 @@ impl GameState {
             target_fov: 70.0f32.to_radians(),
             fov_transition_speed: 1.0 / 0.3,
             fog_settings: FogSettings::default(),
+            world_state: WorldState::default(),
         }
     }
 
@@ -64,11 +66,26 @@ impl GameState {
         self.camera_pitch = self.camera_pitch.clamp(-1.5, 1.5);
         
         self.player.rotation = self.camera_yaw;
+
+        if is_key_pressed(KeyCode::Key1) {
+            self.world_state.set_weather(WeatherState::Clear);
+        }
+        if is_key_pressed(KeyCode::Key2) {
+            self.world_state.set_weather(WeatherState::LightFog);
+        }
+        if is_key_pressed(KeyCode::Key3) {
+            self.world_state.set_weather(WeatherState::HeavyFog);
+        }
     }
 
     fn update(&mut self, input: &InputState, dt: f32) {
         self.player_controller.update(&mut self.player, input, dt);
         self.chunk_manager.update_loaded_chunks(self.player.position);
+        self.world_state.update(dt);
+        
+        let fog_density = self.world_state.get_fog_density();
+        self.fog_settings.set_density(fog_density);
+        
         self.update_camera_effects(dt);
     }
 
@@ -137,23 +154,37 @@ impl GameState {
 
         set_camera(&camera);
 
-        draw_grid(20, 1.0, grayscale(0.5), grayscale(0.3));
+        let ambient_light = self.world_state.get_ambient_light();
+        
+        draw_grid(20, 1.0, 
+            grayscale(0.5 * ambient_light), 
+            grayscale(0.3 * ambient_light)
+        );
 
         let camera_pos_2d = vec2(final_camera_pos.x, final_camera_pos.z);
         
         let cube1_pos = vec3(0.0, 0.5, 0.0);
         let distance1 = vec2(cube1_pos.x, cube1_pos.z).distance(camera_pos_2d);
-        let cube1_color = self.fog_settings.apply_fog_to_color(grayscale(0.5), distance1);
+        let cube1_color = self.fog_settings.apply_fog_to_color(
+            grayscale(0.5 * ambient_light), 
+            distance1
+        );
         draw_cube(cube1_pos, vec3(1.0, 1.0, 1.0), None, cube1_color);
         
         let cube2_pos = vec3(5.0, 2.0, 0.0);
         let distance2 = vec2(cube2_pos.x, cube2_pos.z).distance(camera_pos_2d);
-        let cube2_color = self.fog_settings.apply_fog_to_color(grayscale(0.7), distance2);
+        let cube2_color = self.fog_settings.apply_fog_to_color(
+            grayscale(0.7 * ambient_light), 
+            distance2
+        );
         draw_cube(cube2_pos, vec3(1.0, 4.0, 1.0), None, cube2_color);
         
         let cube3_pos = vec3(-5.0, 1.5, 5.0);
         let distance3 = vec2(cube3_pos.x, cube3_pos.z).distance(camera_pos_2d);
-        let cube3_color = self.fog_settings.apply_fog_to_color(grayscale(0.3), distance3);
+        let cube3_color = self.fog_settings.apply_fog_to_color(
+            grayscale(0.3 * ambient_light), 
+            distance3
+        );
         draw_cube(cube3_pos, vec3(1.0, 3.0, 1.0), None, cube3_color);
 
         self.renderer.render_all_with_culling(&camera);
@@ -198,6 +229,33 @@ impl GameState {
             100.0,
             20.0,
             grayscale(1.0),
+        );
+        draw_text(
+            &format!("Time: {:.2} | Light: {:.2}", 
+                self.world_state.time_of_day,
+                ambient_light
+            ),
+            10.0,
+            120.0,
+            20.0,
+            grayscale(1.0),
+        );
+        draw_text(
+            &format!("Weather: {:?} | Fog: {:.3}", 
+                self.world_state.weather,
+                self.world_state.get_fog_density()
+            ),
+            10.0,
+            140.0,
+            20.0,
+            grayscale(1.0),
+        );
+        draw_text(
+            "1: Clear | 2: Light Fog | 3: Heavy Fog",
+            10.0,
+            160.0,
+            16.0,
+            grayscale(0.7),
         );
 
         self.stamina_hud.draw(self.player.stamina, dt);
