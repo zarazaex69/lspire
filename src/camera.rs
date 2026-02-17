@@ -32,7 +32,7 @@ fn spawn_camera(mut commands: Commands) {
     commands.spawn((
         Camera3d::default(),
         Camera {
-            clear_color: ClearColorConfig::Custom(Color::srgb(0.35, 0.48, 0.66)),
+            clear_color: ClearColorConfig::None,
             ..default()
         },
         Transform::from_xyz(0.0, 1.6, 0.0),

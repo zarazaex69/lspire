@@ -105,7 +105,7 @@ fn player_movement(
 
     let is_grounded = transform.translation.y <= 1.0;
 
-    if keyboard.just_pressed(KeyCode::Space) && is_grounded {
+    if keyboard.pressed(KeyCode::Space) && is_grounded {
         velocity.value.y = jump_force;
     }
 }
