@@ -1,3 +1,4 @@
+mod audio;
 mod camera;
 mod debug;
 mod physics;
@@ -7,6 +8,7 @@ mod world;
 
 use bevy::prelude::*;
 use bevy::window::PresentMode;
+use audio::AudioPlugin;
 use camera::CameraPlugin;
 use debug::DebugPlugin;
 use physics::PhysicsPlugin;
@@ -33,6 +35,6 @@ fn main() {
         }),
         ..default()
     }))
-    .add_plugins((WorldPlugin, PlayerPlugin, PhysicsPlugin, CameraPlugin, DebugPlugin, SkyboxPlugin))
+    .add_plugins((WorldPlugin, PlayerPlugin, PhysicsPlugin, CameraPlugin, DebugPlugin, SkyboxPlugin, AudioPlugin))
     .run();
 }
