@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
-use crate::player::{Player, PlayerSpeed};
+use crate::player::{Player, PlayerSpeed, PlayerMovement};
 
 pub struct DebugPlugin;
 
@@ -60,7 +60,7 @@ fn toggle_debug_ui(
 fn update_debug_info(
     diagnostics: Res<DiagnosticsStore>,
     debug_visible: Res<DebugVisible>,
-    player_query: Query<(&Transform, &PlayerSpeed), With<Player>>,
+    player_query: Query<(&Transform, &PlayerSpeed, &PlayerMovement), With<Player>>,
     camera_query: Query<&Transform, (With<Camera3d>, Without<Player>)>,
     mut text_query: Query<&mut Text, With<DebugText>>,
     time: Res<Time>,
@@ -89,15 +89,19 @@ fn update_debug_info(
         frame_time
     );
 
-    if let Ok((player_transform, player_speed)) = player_query.get_single() {
+    if let Ok((player_transform, player_speed, player_movement)) = player_query.get_single() {
         let pos = player_transform.translation;
         debug_info.push_str(&format!(
             "Position:\n  X: {:.2}\n  Y: {:.2}\n  Z: {:.2}\n\n",
             pos.x, pos.y, pos.z
         ));
         debug_info.push_str(&format!(
-            "Speed: {:.1} / {:.1}\n\n",
+            "Speed: {:.1} / {:.1}\n",
             player_speed.current, player_speed.max
+        ));
+        debug_info.push_str(&format!(
+            "Drift: {:.1}%\n\n",
+            player_movement.drift_factor * 100.0
         ));
     }
 
