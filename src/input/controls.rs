@@ -7,6 +7,7 @@ pub struct InputState {
     pub move_right: bool,
     pub jump: bool,
     pub draw: bool,
+    pub sprint: bool,
     pub mouse_delta: Vec2,
 }
 
@@ -19,6 +20,7 @@ impl InputState {
             move_right: false,
             jump: false,
             draw: false,
+            sprint: false,
             mouse_delta: Vec2::ZERO,
         }
     }
@@ -30,6 +32,7 @@ impl InputState {
         self.move_right = is_key_down(KeyCode::D);
         self.jump = is_key_pressed(KeyCode::Space);
         self.draw = is_mouse_button_down(MouseButton::Left);
+        self.sprint = is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift);
         self.mouse_delta = mouse_delta_position();
     }
 }

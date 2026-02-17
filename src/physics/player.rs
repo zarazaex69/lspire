@@ -7,6 +7,10 @@ pub struct Player {
     pub rotation: f32,
     pub is_grounded: bool,
     pub selected_gray_shade: u8,
+    pub stamina: f32,
+    pub is_sprinting: bool,
+    pub current_speed_multiplier: f32,
+    pub time_since_last_sprint: f32,
 }
 
 impl Player {
@@ -18,6 +22,10 @@ impl Player {
             rotation: 0.0,
             is_grounded: false,
             selected_gray_shade: 128,
+            stamina: 100.0,
+            is_sprinting: false,
+            current_speed_multiplier: 1.0,
+            time_since_last_sprint: 999.0,
         }
     }
 }
@@ -26,6 +34,11 @@ pub struct PlayerController {
     pub move_speed: f32,
     pub jump_force: f32,
     pub gravity: f32,
+    pub sprint_multiplier: f32,
+    pub stamina_drain_rate: f32,
+    pub stamina_regen_rate: f32,
+    pub sprint_acceleration_time: f32,
+    pub stamina_regen_delay: f32,
 }
 
 impl PlayerController {
@@ -34,10 +47,18 @@ impl PlayerController {
             move_speed: 5.0,
             jump_force: 8.0,
             gravity: 20.0,
+            sprint_multiplier: 2.5,
+            stamina_drain_rate: 20.0,
+            stamina_regen_rate: 33.333,
+            sprint_acceleration_time: 0.5,
+            stamina_regen_delay: 1.0,
         }
     }
 
     pub fn update(&self, player: &mut Player, input: &crate::input::controls::InputState, dt: f32) {
+        self.update_sprint_state(player, input, dt);
+        self.update_stamina(player, dt);
+        
         let mut move_dir = Vec3::ZERO;
         
         if input.move_forward {
@@ -64,8 +85,9 @@ impl PlayerController {
             
             let movement = forward * move_dir.z + right * move_dir.x;
             
-            player.velocity.x = movement.x * self.move_speed;
-            player.velocity.z = movement.z * self.move_speed;
+            let effective_speed = self.move_speed * player.current_speed_multiplier;
+            player.velocity.x = movement.x * effective_speed;
+            player.velocity.z = movement.z * effective_speed;
         } else {
             player.velocity.x = 0.0;
             player.velocity.z = 0.0;
@@ -89,9 +111,64 @@ impl PlayerController {
         }
     }
     
+    pub fn update_sprint_state(&self, player: &mut Player, input: &crate::input::controls::InputState, dt: f32) {
+        let sprint_lockout_threshold = 30.0;
+        let can_sprint = player.stamina >= sprint_lockout_threshold;
+        
+        let wants_to_sprint = input.sprint && (input.move_forward || input.move_back || input.move_left || input.move_right);
+        
+        let was_sprinting = player.is_sprinting;
+        
+        if wants_to_sprint && can_sprint {
+            player.is_sprinting = true;
+            player.time_since_last_sprint = 0.0;
+        } else {
+            player.is_sprinting = false;
+            if was_sprinting {
+                player.time_since_last_sprint = 0.0;
+            } else {
+                player.time_since_last_sprint += dt;
+            }
+        }
+        
+        let target_multiplier = if player.is_sprinting {
+            self.sprint_multiplier
+        } else {
+            1.0
+        };
+        
+        let acceleration_rate = (self.sprint_multiplier - 1.0) / self.sprint_acceleration_time;
+        
+        if player.current_speed_multiplier < target_multiplier {
+            player.current_speed_multiplier += acceleration_rate * dt;
+            if player.current_speed_multiplier > target_multiplier {
+                player.current_speed_multiplier = target_multiplier;
+            }
+        } else if player.current_speed_multiplier > target_multiplier {
+            player.current_speed_multiplier -= acceleration_rate * dt;
+            if player.current_speed_multiplier < target_multiplier {
+                player.current_speed_multiplier = target_multiplier;
+            }
+        }
+    }
+    
+    pub fn update_stamina(&self, player: &mut Player, dt: f32) {
+        if player.is_sprinting {
+            player.stamina -= self.stamina_drain_rate * dt;
+            if player.stamina < 0.0 {
+                player.stamina = 0.0;
+            }
+        } else if player.time_since_last_sprint >= self.stamina_regen_delay {
+            player.stamina += self.stamina_regen_rate * dt;
+            if player.stamina > 100.0 {
+                player.stamina = 100.0;
+            }
+        }
+    }
+    
     fn handle_ground_collision(&self, player: &mut Player) {
         let ground_level = 0.0;
-        let player_height = 1.8;
+        let _player_height = 1.8;
         
         if player.position.y <= ground_level {
             player.position.y = ground_level;
@@ -106,6 +183,7 @@ impl PlayerController {
 #[cfg(test)]
 mod unit_tests {
     use super::*;
+    use crate::input::controls::InputState;
 
     #[test]
     fn test_vertical_surface_collision() {
@@ -253,6 +331,133 @@ mod unit_tests {
         assert_eq!(player.velocity.z, 3.0, 
             "Z velocity should be preserved when sliding along wall");
     }
+
+    #[test]
+    fn test_sprint_activation_deactivation() {
+        let controller = PlayerController::new();
+        let mut player = Player::new(0, vec3(0.0, 0.0, 0.0));
+        player.stamina = 100.0;
+        player.is_grounded = true;
+        player.current_speed_multiplier = 1.0;
+        
+        let mut input = InputState::new();
+        input.sprint = true;
+        input.move_forward = true;
+        
+        controller.update_sprint_state(&mut player, &input, 0.016);
+        assert!(player.is_sprinting, "Sprint should activate when sprint key is pressed with movement");
+        
+        input.sprint = false;
+        controller.update_sprint_state(&mut player, &input, 0.016);
+        assert!(!player.is_sprinting, "Sprint should deactivate when sprint key is released");
+        
+        input.sprint = true;
+        input.move_forward = false;
+        controller.update_sprint_state(&mut player, &input, 0.016);
+        assert!(!player.is_sprinting, "Sprint should not activate without movement input");
+        
+        input.move_forward = true;
+        controller.update_sprint_state(&mut player, &input, 0.016);
+        assert!(player.is_sprinting, "Sprint should reactivate with both sprint key and movement");
+    }
+
+    #[test]
+    fn test_stamina_lockout_boundary() {
+        let controller = PlayerController::new();
+        let mut player = Player::new(0, vec3(0.0, 0.0, 0.0));
+        player.is_grounded = true;
+        player.current_speed_multiplier = 1.0;
+        
+        let mut input = InputState::new();
+        input.sprint = true;
+        input.move_forward = true;
+        
+        player.stamina = 29.0;
+        controller.update_sprint_state(&mut player, &input, 0.016);
+        assert!(!player.is_sprinting, "Sprint should be locked at 29% stamina (below 30% threshold)");
+        
+        player.stamina = 30.0;
+        controller.update_sprint_state(&mut player, &input, 0.016);
+        assert!(player.is_sprinting, "Sprint should be allowed at exactly 30% stamina (at threshold)");
+        
+        player.stamina = 31.0;
+        controller.update_sprint_state(&mut player, &input, 0.016);
+        assert!(player.is_sprinting, "Sprint should be allowed at 31% stamina (above threshold)");
+        
+        player.stamina = 0.0;
+        controller.update_sprint_state(&mut player, &input, 0.016);
+        assert!(!player.is_sprinting, "Sprint should be locked at 0% stamina");
+    }
+
+    #[test]
+    fn test_sprint_in_air() {
+        let controller = PlayerController::new();
+        let mut player = Player::new(0, vec3(0.0, 5.0, 0.0));
+        player.stamina = 100.0;
+        player.is_grounded = false;
+        player.current_speed_multiplier = 1.0;
+        
+        let mut input = InputState::new();
+        input.sprint = true;
+        input.move_forward = true;
+        
+        controller.update_sprint_state(&mut player, &input, 0.016);
+        assert!(player.is_sprinting, "Sprint state should be allowed in air");
+        
+        let initial_multiplier = player.current_speed_multiplier;
+        for _ in 0..10 {
+            controller.update_sprint_state(&mut player, &input, 0.016);
+        }
+        assert!(player.current_speed_multiplier > initial_multiplier, 
+            "Speed multiplier should increase even in air");
+        
+        controller.update_stamina(&mut player, 0.016);
+        assert!(player.stamina < 100.0, "Stamina should drain while sprinting in air");
+    }
+
+    #[test]
+    fn test_stamina_regeneration_interruption() {
+        let controller = PlayerController::new();
+        let mut player = Player::new(0, vec3(0.0, 0.0, 0.0));
+        player.stamina = 50.0;
+        player.is_sprinting = false;
+        player.is_grounded = true;
+        player.time_since_last_sprint = 999.0;
+        
+        let mut input = InputState::new();
+        input.sprint = false;
+        input.move_forward = true;
+        
+        for _ in 0..10 {
+            controller.update_stamina(&mut player, 0.1);
+        }
+        let stamina_after_regen = player.stamina;
+        assert!(stamina_after_regen > 50.0, "Stamina should regenerate when not sprinting");
+        
+        input.sprint = true;
+        controller.update_sprint_state(&mut player, &input, 0.016);
+        player.is_sprinting = true;
+        
+        for _ in 0..10 {
+            controller.update_stamina(&mut player, 0.1);
+        }
+        assert!(player.stamina < stamina_after_regen, 
+            "Stamina should immediately start draining when sprint is activated");
+        
+        input.sprint = false;
+        controller.update_sprint_state(&mut player, &input, 0.016);
+        player.is_sprinting = false;
+        
+        let stamina_before_resume = player.stamina;
+        
+        player.time_since_last_sprint = controller.stamina_regen_delay + 0.1;
+        
+        for _ in 0..10 {
+            controller.update_stamina(&mut player, 0.1);
+        }
+        assert!(player.stamina > stamina_before_resume, 
+            "Stamina should resume regeneration after delay when sprint is deactivated");
+    }
 }
 
 #[cfg(test)]
@@ -303,7 +508,7 @@ mod property_tests {
                     player.position.z - initial_pos.z
                 ).length();
                 
-                let expected_speed = controller.move_speed * dt;
+                let expected_speed = controller.move_speed * player.current_speed_multiplier * dt;
                 
                 prop_assert!(
                     (horizontal_displacement - expected_speed).abs() < 0.01,
@@ -395,6 +600,242 @@ mod property_tests {
                 "Vertical velocity should decrease when gravity is applied. Before: {}, After: {}",
                 velocity_before,
                 velocity_after
+            );
+        }
+
+        #[test]
+        fn test_property_42_sprint_acceleration(
+            pos_x in -1000.0f32..1000.0,
+            pos_y in 0.0f32..100.0,
+            pos_z in -1000.0f32..1000.0,
+            initial_stamina in 30.0f32..100.0,
+            elapsed_time in 0.0f32..1.0
+        ) {
+            let controller = PlayerController::new();
+            let mut player = Player::new(0, vec3(pos_x, pos_y, pos_z));
+            player.stamina = initial_stamina;
+            player.current_speed_multiplier = 1.0;
+            player.is_grounded = true;
+            
+            let mut input = InputState::new();
+            input.sprint = true;
+            input.move_forward = true;
+            
+            let num_steps = 100;
+            let dt = elapsed_time / num_steps as f32;
+            
+            for _ in 0..num_steps {
+                controller.update_sprint_state(&mut player, &input, dt);
+            }
+            
+            let expected_progress = (elapsed_time / controller.sprint_acceleration_time).min(1.0);
+            let expected_multiplier = 1.0 + (controller.sprint_multiplier - 1.0) * expected_progress;
+            
+            prop_assert!(
+                (player.current_speed_multiplier - expected_multiplier).abs() < 0.05,
+                "Sprint acceleration should be smooth over {} seconds. Expected: {}, Got: {} after {} seconds",
+                controller.sprint_acceleration_time,
+                expected_multiplier,
+                player.current_speed_multiplier,
+                elapsed_time
+            );
+            
+            prop_assert!(
+                player.current_speed_multiplier >= 1.0 && player.current_speed_multiplier <= controller.sprint_multiplier,
+                "Speed multiplier should be between 1.0 and sprint_multiplier. Got: {}",
+                player.current_speed_multiplier
+            );
+        }
+
+        #[test]
+        fn test_property_43_stamina_depletion_rate(
+            pos_x in -1000.0f32..1000.0,
+            pos_y in 0.0f32..100.0,
+            pos_z in -1000.0f32..1000.0,
+            sprint_duration in 0.1f32..5.0
+        ) {
+            let controller = PlayerController::new();
+            let mut player = Player::new(0, vec3(pos_x, pos_y, pos_z));
+            player.stamina = 100.0;
+            player.is_sprinting = true;
+            
+            let initial_stamina = player.stamina;
+            
+            let num_steps = 100;
+            let dt = sprint_duration / num_steps as f32;
+            
+            for _ in 0..num_steps {
+                controller.update_stamina(&mut player, dt);
+            }
+            
+            let expected_stamina_loss = controller.stamina_drain_rate * sprint_duration;
+            let actual_stamina_loss = initial_stamina - player.stamina;
+            
+            prop_assert!(
+                (actual_stamina_loss - expected_stamina_loss).abs() < 1.0,
+                "Stamina depletion should be stamina_drain_rate * time. Expected loss: {}, Got: {}",
+                expected_stamina_loss,
+                actual_stamina_loss
+            );
+            
+            let full_depletion_time = 100.0 / controller.stamina_drain_rate;
+            prop_assert!(
+                (full_depletion_time - 5.0).abs() < 0.5,
+                "Full stamina depletion should take approximately 5 seconds. Got: {} seconds",
+                full_depletion_time
+            );
+        }
+
+        #[test]
+        fn test_property_44_stamina_regeneration_rate(
+            pos_x in -1000.0f32..1000.0,
+            pos_y in 0.0f32..100.0,
+            pos_z in -1000.0f32..1000.0,
+            initial_stamina in 0.0f32..70.0,
+            regen_duration in 0.1f32..3.0
+        ) {
+            let controller = PlayerController::new();
+            let mut player = Player::new(0, vec3(pos_x, pos_y, pos_z));
+            player.stamina = initial_stamina;
+            player.is_sprinting = false;
+            
+            let stamina_before = player.stamina;
+            
+            let num_steps = 100;
+            let dt = regen_duration / num_steps as f32;
+            
+            for _ in 0..num_steps {
+                controller.update_stamina(&mut player, dt);
+            }
+            
+            let expected_stamina_gain = controller.stamina_regen_rate * regen_duration;
+            let actual_stamina_gain = player.stamina - stamina_before;
+            let capped_expected_gain = expected_stamina_gain.min(100.0 - stamina_before);
+            
+            prop_assert!(
+                (actual_stamina_gain - capped_expected_gain).abs() < 1.0,
+                "Stamina regeneration should be stamina_regen_rate * time. Expected gain: {}, Got: {}",
+                capped_expected_gain,
+                actual_stamina_gain
+            );
+            
+            let full_regen_time = 100.0 / controller.stamina_regen_rate;
+            prop_assert!(
+                (full_regen_time - 3.0).abs() < 0.5,
+                "Full stamina regeneration should take approximately 3 seconds. Got: {} seconds",
+                full_regen_time
+            );
+        }
+
+        #[test]
+        fn test_property_45_sprint_lockout_threshold(
+            pos_x in -1000.0f32..1000.0,
+            pos_y in 0.0f32..100.0,
+            pos_z in -1000.0f32..1000.0,
+            stamina in 0.0f32..100.0,
+            dt in 0.001f32..0.1
+        ) {
+            let controller = PlayerController::new();
+            let mut player = Player::new(0, vec3(pos_x, pos_y, pos_z));
+            player.stamina = stamina;
+            player.current_speed_multiplier = 1.0;
+            player.is_grounded = true;
+            
+            let mut input = InputState::new();
+            input.sprint = true;
+            input.move_forward = true;
+            
+            controller.update_sprint_state(&mut player, &input, dt);
+            
+            let sprint_lockout_threshold = 30.0;
+            
+            if stamina < sprint_lockout_threshold {
+                prop_assert!(
+                    !player.is_sprinting,
+                    "Player should not be able to sprint with stamina {} below threshold {}",
+                    stamina,
+                    sprint_lockout_threshold
+                );
+                
+                prop_assert!(
+                    player.current_speed_multiplier <= 1.0 + 0.01,
+                    "Speed multiplier should not increase with stamina below threshold. Got: {}",
+                    player.current_speed_multiplier
+                );
+            } else {
+                prop_assert!(
+                    player.is_sprinting,
+                    "Player should be able to sprint with stamina {} at or above threshold {}",
+                    stamina,
+                    sprint_lockout_threshold
+                );
+            }
+        }
+
+        #[test]
+        fn test_property_46_stamina_bounds(
+            pos_x in -1000.0f32..1000.0,
+            pos_y in 0.0f32..100.0,
+            pos_z in -1000.0f32..1000.0,
+            initial_stamina in 0.0f32..100.0,
+            is_sprinting in any::<bool>(),
+            duration in 0.1f32..10.0
+        ) {
+            let controller = PlayerController::new();
+            let mut player = Player::new(0, vec3(pos_x, pos_y, pos_z));
+            player.stamina = initial_stamina;
+            player.is_sprinting = is_sprinting;
+            
+            let num_steps = 100;
+            let dt = duration / num_steps as f32;
+            
+            for _ in 0..num_steps {
+                controller.update_stamina(&mut player, dt);
+                
+                prop_assert!(
+                    player.stamina >= 0.0 && player.stamina <= 100.0,
+                    "Stamina should always be within [0.0, 100.0]. Got: {}",
+                    player.stamina
+                );
+            }
+        }
+
+        #[test]
+        fn test_property_47_sprint_speed_consistency(
+            pos_x in -1000.0f32..1000.0,
+            pos_y in 0.0f32..100.0,
+            pos_z in -1000.0f32..1000.0,
+            rotation in 0.0f32..std::f32::consts::TAU,
+            dt in 0.001f32..0.1
+        ) {
+            let controller = PlayerController::new();
+            let mut player = Player::new(0, vec3(pos_x, pos_y, pos_z));
+            player.rotation = rotation;
+            player.stamina = 100.0;
+            player.current_speed_multiplier = controller.sprint_multiplier;
+            player.is_sprinting = true;
+            player.is_grounded = true;
+            
+            let mut input = InputState::new();
+            input.sprint = true;
+            input.move_forward = true;
+            
+            let initial_pos = player.position;
+            
+            controller.update(&mut player, &input, dt);
+            
+            let horizontal_displacement = vec2(
+                player.position.x - initial_pos.x,
+                player.position.z - initial_pos.z
+            ).length();
+            
+            let expected_speed = controller.move_speed * controller.sprint_multiplier * dt;
+            
+            prop_assert!(
+                (horizontal_displacement - expected_speed).abs() < 0.01,
+                "Sprint speed should equal base_move_speed * sprint_multiplier. Expected: {}, Got: {}",
+                expected_speed,
+                horizontal_displacement
             );
         }
     }
