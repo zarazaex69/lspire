@@ -9,10 +9,10 @@ mod input;
 mod ui;
 
 use world::{ChunkManager, WorldState, WeatherState};
-use rendering::{InstancedRenderer, grayscale, FogSettings};
+use rendering::{InstancedRenderer, grayscale, FogSettings, DrawingSystem, DrawMark};
 use physics::{Player, PlayerController};
 use input::InputState;
-use ui::hud::StaminaHUD;
+use ui::{hud::StaminaHUD, ShadeSelector};
 
 fn window_conf() -> Conf {
     Conf {
@@ -38,6 +38,8 @@ struct GameState {
     fov_transition_speed: f32,
     fog_settings: FogSettings,
     world_state: WorldState,
+    drawing_system: DrawingSystem,
+    shade_selector: ShadeSelector,
 }
 
 impl GameState {
@@ -56,6 +58,8 @@ impl GameState {
             fov_transition_speed: 1.0 / 0.3,
             fog_settings: FogSettings::default(),
             world_state: WorldState::default(),
+            drawing_system: DrawingSystem::new(),
+            shade_selector: ShadeSelector::new(),
         }
     }
 
@@ -67,14 +71,48 @@ impl GameState {
         
         self.player.rotation = self.camera_yaw;
 
-        if is_key_pressed(KeyCode::Key1) {
+        if is_key_pressed(KeyCode::Key1) && !self.shade_selector.is_visible() {
             self.world_state.set_weather(WeatherState::Clear);
         }
-        if is_key_pressed(KeyCode::Key2) {
+        if is_key_pressed(KeyCode::Key2) && !self.shade_selector.is_visible() {
             self.world_state.set_weather(WeatherState::LightFog);
         }
-        if is_key_pressed(KeyCode::Key3) {
+        if is_key_pressed(KeyCode::Key3) && !self.shade_selector.is_visible() {
             self.world_state.set_weather(WeatherState::HeavyFog);
+        }
+
+        if is_key_pressed(KeyCode::G) {
+            self.shade_selector.toggle_visibility();
+        }
+
+        if let Some(new_shade) = self.shade_selector.handle_input() {
+            self.player.selected_gray_shade = new_shade;
+        }
+
+        if is_mouse_button_pressed(MouseButton::Left) && !self.shade_selector.is_visible() {
+            self.handle_drawing();
+        }
+    }
+
+    fn handle_drawing(&mut self) {
+        let camera_offset = vec3(0.0, 1.6, 0.0);
+        let camera_pos = self.player.position + camera_offset;
+
+        let (sin_yaw, cos_yaw) = self.camera_yaw.sin_cos();
+        let (sin_pitch, cos_pitch) = self.camera_pitch.sin_cos();
+        let ray_direction = vec3(
+            sin_yaw * cos_pitch,
+            sin_pitch,
+            cos_yaw * cos_pitch,
+        ).normalize();
+
+        if let Some(hit) = self.drawing_system.raycast_surface(camera_pos, ray_direction, 10.0) {
+            let mark = DrawMark::new(
+                hit.uv,
+                self.player.selected_gray_shade,
+                0.05,
+            );
+            self.drawing_system.add_mark(hit.surface_id, mark);
         }
     }
 
@@ -257,8 +295,25 @@ impl GameState {
             16.0,
             grayscale(0.7),
         );
+        draw_text(
+            &format!("Selected Shade: {} | Press G to toggle shade selector", 
+                self.player.selected_gray_shade
+            ),
+            10.0,
+            180.0,
+            16.0,
+            grayscale(0.7),
+        );
+        draw_text(
+            "Left Click to draw on surfaces",
+            10.0,
+            200.0,
+            16.0,
+            grayscale(0.7),
+        );
 
         self.stamina_hud.draw(self.player.stamina, dt);
+        self.shade_selector.draw(self.player.selected_gray_shade);
     }
 }
 

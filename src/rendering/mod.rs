@@ -11,3 +11,4 @@ pub use mesh::{SpireMesh, PipeMesh, generate_spire_mesh, generate_pipe_mesh};
 pub use color::{grayscale, grayscale_with_alpha};
 pub use fog::FogSettings;
 pub use frustum::Frustum;
+pub use drawing::{DrawingSystem, DrawingData, DrawMark, RaycastHit};
