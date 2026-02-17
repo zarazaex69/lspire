@@ -49,49 +49,12 @@ impl GameState {
         self.camera_yaw += input.mouse_delta.x * mouse_sensitivity;
         self.camera_pitch += input.mouse_delta.y * mouse_sensitivity;
         self.camera_pitch = self.camera_pitch.clamp(-1.5, 1.5);
-
-        let (sin_yaw, cos_yaw) = self.camera_yaw.sin_cos();
-        let forward = vec3(sin_yaw, 0.0, cos_yaw);
-        let right = vec3(cos_yaw, 0.0, -sin_yaw);
-
-        let mut move_dir = Vec3::ZERO;
-        if input.move_forward {
-            move_dir += forward;
-        }
-        if input.move_back {
-            move_dir -= forward;
-        }
-        if input.move_left {
-            move_dir += right;
-        }
-        if input.move_right {
-            move_dir -= right;
-        }
-
-        if move_dir.length() > 0.0 {
-            move_dir = move_dir.normalize();
-        }
-
-        self.player.velocity.x = move_dir.x * self.player_controller.move_speed;
-        self.player.velocity.z = move_dir.z * self.player_controller.move_speed;
-
-        if input.jump && self.player.is_grounded {
-            self.player.velocity.y = self.player_controller.jump_force;
-            self.player.is_grounded = false;
-        }
+        
+        self.player.rotation = self.camera_yaw;
     }
 
-    fn update(&mut self, dt: f32) {
-        self.player_controller.apply_gravity(&mut self.player, dt);
-
-        self.player.position += self.player.velocity * dt;
-
-        if self.player.position.y <= 0.0 {
-            self.player.position.y = 0.0;
-            self.player.velocity.y = 0.0;
-            self.player.is_grounded = true;
-        }
-
+    fn update(&mut self, input: &InputState, dt: f32) {
+        self.player_controller.update(&mut self.player, input, dt);
         self.chunk_manager.update_loaded_chunks(self.player.position);
     }
 
@@ -174,7 +137,7 @@ async fn main() {
 
         game_state.handle_input(&input_state);
 
-        game_state.update(dt);
+        game_state.update(&input_state, dt);
 
         clear_background(Color::from_rgba(50, 50, 50, 255));
 

@@ -3,8 +3,17 @@ name = "lspire"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "lspire"
+path = "src/lib.rs"
+
+[[bin]]
+name = "lspire"
+path = "src/main.rs"
+
 [dependencies]
 macroquad = "0.4"
+noise = "0.9"
 
 [dev-dependencies]
 proptest = "1.4"
