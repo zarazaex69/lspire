@@ -1,18 +1,6 @@
 [package]
 name = "lspire"
 version = "0.1.0"
-edition = "2021"
-
-[lib]
-name = "lspire"
-path = "src/lib.rs"
-
-[[bin]]
-name = "lspire"
-path = "src/main.rs"
+edition = "2024"
 
 [dependencies]
-macroquad = "0.4"
-
-[dev-dependencies]
-proptest = "1.4"
