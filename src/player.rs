@@ -122,23 +122,23 @@ fn player_movement(
     };
 
     let speed_ratio = speed.current / speed.max;
-    let drift_threshold = 0.5;
+    let drift_threshold = 0.4;
     
-    let lerp_factor = if has_input {
+    let (acceleration_lerp, drift_amount) = if has_input {
         if speed_ratio > drift_threshold {
-            let drift_amount = (speed_ratio - drift_threshold) / (1.0 - drift_threshold);
-            movement.drift_factor = drift_amount;
-            0.05 + drift_amount * 0.15
+            let drift = ((speed_ratio - drift_threshold) / (1.0 - drift_threshold)).powf(1.5);
+            movement.drift_factor = drift;
+            (0.03 + drift * 0.07, drift)
         } else {
             movement.drift_factor = 0.0;
-            0.2
+            (0.15, 0.0)
         }
     } else {
         movement.drift_factor = 0.0;
-        0.08
+        (0.08, 0.0)
     };
 
-    movement.velocity = movement.velocity.lerp(target_velocity, lerp_factor);
+    movement.velocity = movement.velocity.lerp(target_velocity, acceleration_lerp);
 
     transform.translation += movement.velocity * time.delta_secs();
 

@@ -15,6 +15,8 @@ impl Plugin for CameraPlugin {
 pub struct FirstPersonCamera {
     pub pitch: f32,
     pub yaw: f32,
+    pub target_pitch: f32,
+    pub target_yaw: f32,
     pub sensitivity: f32,
 }
 
@@ -23,6 +25,8 @@ impl Default for FirstPersonCamera {
         Self {
             pitch: 0.0,
             yaw: 0.0,
+            target_pitch: 0.0,
+            target_yaw: 0.0,
             sensitivity: 0.002,
         }
     }
@@ -76,11 +80,12 @@ fn toggle_cursor_grab(
 }
 
 fn first_person_camera(
-    player_query: Query<&Transform, With<Player>>,
+    player_query: Query<(&Transform, &crate::player::PlayerMovement), With<Player>>,
     mut camera_query: Query<(&mut Transform, &mut FirstPersonCamera), (With<Camera3d>, Without<Player>)>,
     mut motion_events: EventReader<bevy::input::mouse::MouseMotion>,
+    time: Res<Time>,
 ) {
-    let Ok(player_transform) = player_query.get_single() else {
+    let Ok((player_transform, player_movement)) = player_query.get_single() else {
         return;
     };
 
@@ -88,11 +93,25 @@ fn first_person_camera(
         return;
     };
 
+    let mut delta_yaw = 0.0;
+    let mut delta_pitch = 0.0;
+
     for event in motion_events.read() {
-        fps_camera.yaw -= event.delta.x * fps_camera.sensitivity;
-        fps_camera.pitch -= event.delta.y * fps_camera.sensitivity;
-        fps_camera.pitch = fps_camera.pitch.clamp(-1.54, 1.54);
+        delta_yaw -= event.delta.x * fps_camera.sensitivity;
+        delta_pitch -= event.delta.y * fps_camera.sensitivity;
     }
+
+    fps_camera.target_yaw += delta_yaw;
+    fps_camera.target_pitch = (fps_camera.target_pitch + delta_pitch).clamp(-1.54, 1.54);
+
+    let smoothing = if player_movement.drift_factor > 0.1 {
+        5.0 + player_movement.drift_factor * 10.0
+    } else {
+        100.0
+    };
+
+    fps_camera.yaw += (fps_camera.target_yaw - fps_camera.yaw) * smoothing * time.delta_secs();
+    fps_camera.pitch += (fps_camera.target_pitch - fps_camera.pitch) * smoothing * time.delta_secs();
 
     let eye_height = 1.6;
     camera_transform.translation = player_transform.translation + Vec3::new(0.0, eye_height, 0.0);
