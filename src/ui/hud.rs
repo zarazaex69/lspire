@@ -1,4 +1,5 @@
 use macroquad::prelude::*;
+use crate::rendering::color::{grayscale, grayscale_with_alpha};
 
 pub struct StaminaHUD {
     displayed_stamina: f32,
@@ -25,7 +26,7 @@ impl StaminaHUD {
         let bar_x = (screen_width - bar_width) / 2.0;
         let bar_y = screen_height - 60.0;
 
-        let bg_color = Color::from_rgba(40, 40, 40, 200);
+        let bg_color = grayscale_with_alpha(0.157, 0.784);
         draw_rectangle(bar_x, bar_y, bar_width, bar_height, bg_color);
 
         let fill_width = (self.displayed_stamina / 100.0) * bar_width;
@@ -35,15 +36,15 @@ impl StaminaHUD {
             self.warning_flash_timer += dt;
             let flash_frequency = 3.0;
             let flash_value = (self.warning_flash_timer * flash_frequency).sin() * 0.5 + 0.5;
-            let intensity = (100.0 + flash_value * 100.0) as u8;
-            Color::from_rgba(intensity, intensity, intensity, 255)
+            let intensity = 0.392 + flash_value * 0.392;
+            grayscale(intensity)
         } else {
-            Color::from_rgba(200, 200, 200, 255)
+            grayscale(0.784)
         };
 
         draw_rectangle(bar_x, bar_y, fill_width, bar_height, bar_color);
 
-        let border_color = Color::from_rgba(150, 150, 150, 255);
+        let border_color = grayscale(0.588);
         draw_rectangle_lines(bar_x, bar_y, bar_width, bar_height, 2.0, border_color);
     }
 }

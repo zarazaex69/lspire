@@ -9,7 +9,7 @@ mod input;
 mod ui;
 
 use world::ChunkManager;
-use rendering::InstancedRenderer;
+use rendering::{InstancedRenderer, grayscale, FogSettings};
 use physics::{Player, PlayerController};
 use input::InputState;
 use ui::hud::StaminaHUD;
@@ -36,6 +36,7 @@ struct GameState {
     current_fov: f32,
     target_fov: f32,
     fov_transition_speed: f32,
+    fog_settings: FogSettings,
 }
 
 impl GameState {
@@ -52,6 +53,7 @@ impl GameState {
             current_fov: 70.0f32.to_radians(),
             target_fov: 70.0f32.to_radians(),
             fov_transition_speed: 1.0 / 0.3,
+            fog_settings: FogSettings::default(),
         }
     }
 
@@ -124,22 +126,37 @@ impl GameState {
             cos_yaw * cos_pitch,
         );
 
-        set_camera(&Camera3D {
+        let camera = Camera3D {
             position: final_camera_pos,
             target: camera_target,
             up: vec3(0.0, 1.0, 0.0),
             fovy: self.current_fov,
             projection: Projection::Perspective,
             ..Default::default()
-        });
+        };
 
-        draw_grid(20, 1.0, GRAY, DARKGRAY);
+        set_camera(&camera);
 
-        draw_cube(vec3(0.0, 0.5, 0.0), vec3(1.0, 1.0, 1.0), None, GRAY);
-        draw_cube(vec3(5.0, 2.0, 0.0), vec3(1.0, 4.0, 1.0), None, LIGHTGRAY);
-        draw_cube(vec3(-5.0, 1.5, 5.0), vec3(1.0, 3.0, 1.0), None, DARKGRAY);
+        draw_grid(20, 1.0, grayscale(0.5), grayscale(0.3));
 
-        self.renderer.render();
+        let camera_pos_2d = vec2(final_camera_pos.x, final_camera_pos.z);
+        
+        let cube1_pos = vec3(0.0, 0.5, 0.0);
+        let distance1 = vec2(cube1_pos.x, cube1_pos.z).distance(camera_pos_2d);
+        let cube1_color = self.fog_settings.apply_fog_to_color(grayscale(0.5), distance1);
+        draw_cube(cube1_pos, vec3(1.0, 1.0, 1.0), None, cube1_color);
+        
+        let cube2_pos = vec3(5.0, 2.0, 0.0);
+        let distance2 = vec2(cube2_pos.x, cube2_pos.z).distance(camera_pos_2d);
+        let cube2_color = self.fog_settings.apply_fog_to_color(grayscale(0.7), distance2);
+        draw_cube(cube2_pos, vec3(1.0, 4.0, 1.0), None, cube2_color);
+        
+        let cube3_pos = vec3(-5.0, 1.5, 5.0);
+        let distance3 = vec2(cube3_pos.x, cube3_pos.z).distance(camera_pos_2d);
+        let cube3_color = self.fog_settings.apply_fog_to_color(grayscale(0.3), distance3);
+        draw_cube(cube3_pos, vec3(1.0, 3.0, 1.0), None, cube3_color);
+
+        self.renderer.render_all_with_culling(&camera);
 
         set_default_camera();
 
@@ -148,7 +165,7 @@ impl GameState {
             10.0,
             20.0,
             20.0,
-            WHITE,
+            grayscale(1.0),
         );
         draw_text(
             &format!("Pos: {:.1}, {:.1}, {:.1}", 
@@ -159,28 +176,28 @@ impl GameState {
             10.0,
             40.0,
             20.0,
-            WHITE,
+            grayscale(1.0),
         );
         draw_text(
             &format!("Grounded: {}", self.player.is_grounded),
             10.0,
             60.0,
             20.0,
-            WHITE,
+            grayscale(1.0),
         );
         draw_text(
             &format!("Stamina: {:.1}%", self.player.stamina),
             10.0,
             80.0,
             20.0,
-            WHITE,
+            grayscale(1.0),
         );
         draw_text(
             &format!("Sprinting: {}", self.player.is_sprinting),
             10.0,
             100.0,
             20.0,
-            WHITE,
+            grayscale(1.0),
         );
 
         self.stamina_hud.draw(self.player.stamina, dt);
@@ -209,7 +226,7 @@ async fn main() {
 
         game_state.update(&input_state, dt);
 
-        clear_background(Color::from_rgba(50, 50, 50, 255));
+        clear_background(grayscale(0.196));
 
         game_state.render(dt);
 

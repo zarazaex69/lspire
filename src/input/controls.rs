@@ -30,7 +30,7 @@ impl InputState {
         self.move_back = is_key_down(KeyCode::S);
         self.move_left = is_key_down(KeyCode::A);
         self.move_right = is_key_down(KeyCode::D);
-        self.jump = is_key_pressed(KeyCode::Space);
+        self.jump = is_key_down(KeyCode::Space);
         self.draw = is_mouse_button_down(MouseButton::Left);
         self.sprint = is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift);
         self.mouse_delta = mouse_delta_position();

@@ -11,6 +11,7 @@ pub struct Player {
     pub is_sprinting: bool,
     pub current_speed_multiplier: f32,
     pub time_since_last_sprint: f32,
+    pub time_since_last_jump: f32,
 }
 
 impl Player {
@@ -26,6 +27,7 @@ impl Player {
             is_sprinting: false,
             current_speed_multiplier: 1.0,
             time_since_last_sprint: 999.0,
+            time_since_last_jump: 999.0,
         }
     }
 }
@@ -39,6 +41,7 @@ pub struct PlayerController {
     pub stamina_regen_rate: f32,
     pub sprint_acceleration_time: f32,
     pub stamina_regen_delay: f32,
+    pub auto_jump_delay: f32,
 }
 
 impl PlayerController {
@@ -52,6 +55,7 @@ impl PlayerController {
             stamina_regen_rate: 33.333,
             sprint_acceleration_time: 0.5,
             stamina_regen_delay: 1.0,
+            auto_jump_delay: 0.2,
         }
     }
 
@@ -93,9 +97,12 @@ impl PlayerController {
             player.velocity.z = 0.0;
         }
         
-        if input.jump && player.is_grounded {
+        player.time_since_last_jump += dt;
+        
+        if input.jump && player.is_grounded && player.time_since_last_jump >= self.auto_jump_delay {
             player.velocity.y = self.jump_force;
             player.is_grounded = false;
+            player.time_since_last_jump = 0.0;
         }
         
         self.apply_gravity(player, dt);
