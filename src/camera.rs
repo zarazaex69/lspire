@@ -128,11 +128,7 @@ fn first_person_camera(
     fps_camera.target_yaw += delta_yaw;
     fps_camera.target_pitch = (fps_camera.target_pitch + delta_pitch).clamp(-1.54, 1.54);
 
-    let smoothing = if player_movement.drift_factor > 0.1 {
-        5.0 + player_movement.drift_factor * 10.0
-    } else {
-        100.0
-    };
+    let smoothing = 100.0;
 
     let delta_time = time.delta_secs().min(0.1);
     let lerp_factor = (smoothing * delta_time).min(1.0);
