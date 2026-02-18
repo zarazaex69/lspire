@@ -5,7 +5,7 @@ pub struct WorldPlugin;
 
 impl Plugin for WorldPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, (setup_lighting, spawn_checkerboard_floor));
+        app.add_systems(Startup, (setup_lighting, spawn_checkerboard_floor, spawn_center_platform));
     }
 }
 
@@ -60,4 +60,32 @@ fn spawn_checkerboard_floor(
             ));
         }
     }
+}
+
+fn spawn_center_platform(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    let platform_width = 4.0;
+    let platform_height = 1.0;
+    let platform_depth = 4.0;
+    let platform_y = 1.5;
+
+    let platform_material = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.3, 0.6, 0.8),
+        metallic: 0.3,
+        perceptual_roughness: 0.5,
+        ..default()
+    });
+
+    let platform_mesh = meshes.add(Cuboid::new(platform_width, platform_height, platform_depth));
+
+    commands.spawn((
+        Mesh3d(platform_mesh),
+        MeshMaterial3d(platform_material),
+        Transform::from_xyz(0.0, platform_y, 0.0),
+        RigidBody::Fixed,
+        Collider::cuboid(platform_width / 2.0, platform_height / 2.0, platform_depth / 2.0),
+    ));
 }
