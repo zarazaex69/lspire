@@ -9,7 +9,10 @@ pub struct AudioPlugin;
 impl Plugin for AudioPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(OnEnter(GameState::InGame), setup_audio)
-            .add_systems(Update, handle_footsteps.run_if(in_state(GameState::InGame)));
+            .add_systems(Update, (
+                handle_footsteps,
+                handle_slide_sound,
+            ).run_if(in_state(GameState::InGame)));
     }
 }
 
@@ -21,6 +24,7 @@ pub struct AudioSystem {
     footstep_right: Arc<Vec<f32>>,
     jump_sound: Arc<Vec<f32>>,
     double_jump_sound: Arc<Vec<f32>>,
+    slide_sound: Arc<Vec<f32>>,
 }
 
 unsafe impl Send for AudioSystem {}
@@ -31,6 +35,12 @@ struct FootstepTimer {
     timer: Timer,
     base_interval: f32,
     is_left_foot: bool,
+}
+
+#[derive(Resource)]
+struct SlideSound {
+    sink: Option<Sink>,
+    is_playing: bool,
 }
 
 impl Default for FootstepTimer {
@@ -50,6 +60,7 @@ fn setup_audio(mut commands: Commands) {
     let footstep_right = generate_footstep_samples(false);
     let jump_sound = generate_jump_samples();
     let double_jump_sound = generate_double_jump_samples();
+    let slide_sound = generate_slide_samples();
     
     commands.insert_resource(AudioSystem {
         _stream: Arc::new(stream),
@@ -58,9 +69,14 @@ fn setup_audio(mut commands: Commands) {
         footstep_right: Arc::new(footstep_right),
         jump_sound: Arc::new(jump_sound),
         double_jump_sound: Arc::new(double_jump_sound),
+        slide_sound: Arc::new(slide_sound),
     });
     
     commands.insert_resource(FootstepTimer::default());
+    commands.insert_resource(SlideSound {
+        sink: None,
+        is_playing: false,
+    });
 }
 
 fn handle_footsteps(
@@ -281,5 +297,116 @@ fn generate_double_jump_samples() -> Vec<f32> {
         samples.push(sample);
     }
 
+    samples
+}
+
+fn handle_slide_sound(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    audio: Res<AudioSystem>,
+    mut slide_res: ResMut<SlideSound>,
+    player_query: Query<(&crate::player::PlayerMovement, &Transform), With<crate::player::Player>>,
+) {
+    let Ok((movement, transform)) = player_query.get_single() else {
+        return;
+    };
+
+    let is_grounded = transform.translation.y <= 1.01;
+    let is_braking = keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight);
+    let has_velocity = movement.velocity.length() > 1.0;
+
+    let should_play = is_braking && is_grounded && has_velocity;
+
+    if should_play && !slide_res.is_playing {
+        let sound = LoopingSound {
+            sample_rate: 44100,
+            samples: audio.slide_sound.clone(),
+            current_sample: 0,
+        };
+        
+        if let Ok(sink) = Sink::try_new(&audio.stream_handle) {
+            sink.set_volume(0.4);
+            sink.append(sound);
+            slide_res.sink = Some(sink);
+            slide_res.is_playing = true;
+        }
+    } else if !should_play && slide_res.is_playing {
+        if let Some(sink) = slide_res.sink.take() {
+            sink.stop();
+        }
+        slide_res.is_playing = false;
+    }
+}
+
+struct LoopingSound {
+    sample_rate: u32,
+    samples: Arc<Vec<f32>>,
+    current_sample: usize,
+}
+
+impl Iterator for LoopingSound {
+    type Item = f32;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let sample = self.samples[self.current_sample];
+        self.current_sample = (self.current_sample + 1) % self.samples.len();
+        Some(sample)
+    }
+}
+
+impl Source for LoopingSound {
+    fn current_frame_len(&self) -> Option<usize> {
+        None
+    }
+
+    fn channels(&self) -> u16 {
+        2
+    }
+
+    fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
+
+    fn total_duration(&self) -> Option<Duration> {
+        None
+    }
+}
+
+fn generate_slide_samples() -> Vec<f32> {
+    let sample_rate = 44100;
+    let duration = 1.0;
+    let num_samples = (sample_rate as f32 * duration) as usize;
+    
+    let mut samples = Vec::with_capacity(num_samples * 2);
+    
+    use rand::Rng;
+    let mut rng = rand::thread_rng();
+    
+    let mut lpf_state = 0.0;
+    let lpf_cutoff = 400.0;
+    let lpf_alpha = 1.0 - (-2.0 * std::f32::consts::PI * lpf_cutoff / sample_rate as f32).exp();
+    
+    let mut hpf_state = 0.0;
+    let hpf_cutoff = 80.0;
+    let hpf_alpha = 1.0 - (-2.0 * std::f32::consts::PI * hpf_cutoff / sample_rate as f32).exp();
+    
+    for i in 0..num_samples {
+        let t = i as f32 / sample_rate as f32;
+        
+        let white_noise = rng.r#gen::<f32>() * 2.0 - 1.0;
+        
+        lpf_state += lpf_alpha * (white_noise - lpf_state);
+        
+        let hpf_input = lpf_state;
+        hpf_state += hpf_alpha * (hpf_input - hpf_state);
+        let filtered = hpf_input - hpf_state;
+        
+        let modulation = (2.0 * std::f32::consts::PI * 8.0 * t).sin() * 0.3 + 0.7;
+        
+        let sample = filtered * modulation * 0.5;
+        
+        samples.push(sample);
+        samples.push(sample);
+    }
+    
     samples
 }
