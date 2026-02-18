@@ -1,14 +1,16 @@
 use bevy::prelude::*;
 use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
 use crate::player::{Player, PlayerSpeed, PlayerMovement};
+use crate::menu::GameState;
+use crate::network::{NetworkState, NetworkMode};
 
 pub struct DebugPlugin;
 
 impl Plugin for DebugPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(FrameTimeDiagnosticsPlugin)
-            .add_systems(Startup, setup_debug_ui)
-            .add_systems(Update, (toggle_debug_ui, update_debug_info));
+            .add_systems(OnEnter(GameState::InGame), setup_debug_ui)
+            .add_systems(Update, (toggle_debug_ui, update_debug_info).run_if(in_state(GameState::InGame)));
     }
 }
 
@@ -60,6 +62,7 @@ fn toggle_debug_ui(
 fn update_debug_info(
     diagnostics: Res<DiagnosticsStore>,
     debug_visible: Res<DebugVisible>,
+    net_state: Res<NetworkState>,
     player_query: Query<(&Transform, &PlayerSpeed, &PlayerMovement), With<Player>>,
     camera_query: Query<&Transform, (With<Camera3d>, Without<Player>)>,
     mut text_query: Query<&mut Text, With<DebugText>>,
@@ -84,10 +87,20 @@ fn update_debug_info(
         .unwrap_or(0.0);
 
     let mut debug_info = format!(
-        "FPS: {:.1}\nFrame Time: {:.2}ms\n\n",
+        "FPS: {:.1}\nFrame Time: {:.2}ms\n",
         fps,
         frame_time
     );
+    
+    if net_state.mode == NetworkMode::Client {
+        debug_info.push_str(&format!("Ping: {:.0}ms\n", net_state.ping_ms));
+    } else if net_state.mode == NetworkMode::Server {
+        debug_info.push_str("Mode: Server\n");
+    } else {
+        debug_info.push_str("Mode: None\n");
+    }
+    
+    debug_info.push_str("\n");
 
     if let Ok((player_transform, player_speed, player_movement)) = player_query.get_single() {
         let pos = player_transform.translation;

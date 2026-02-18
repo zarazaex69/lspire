@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use bevy_rapier3d::prelude::*;
+use crate::menu::GameState;
 
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub enum GameSystemSet {
@@ -17,6 +18,6 @@ impl Plugin for PhysicsPlugin {
                 GameSystemSet::Input,
                 GameSystemSet::Physics,
                 GameSystemSet::Camera,
-            ).chain());
+            ).chain().run_if(in_state(GameState::InGame)));
     }
 }

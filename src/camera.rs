@@ -1,18 +1,20 @@
 use bevy::prelude::*;
-use bevy::window::{CursorGrabMode, PrimaryWindow};
+use bevy::window::CursorGrabMode;
 use crate::player::Player;
 use crate::physics::GameSystemSet;
+use crate::menu::GameState;
 
 pub struct CameraPlugin;
 
 impl Plugin for CameraPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, spawn_camera)
+        app.add_systems(OnEnter(GameState::InGame), (spawn_camera, grab_cursor_on_start))
+            .add_systems(OnExit(GameState::InGame), release_cursor_on_exit)
             .add_systems(Update, (
-                setup_cursor_grab,
                 toggle_cursor_grab,
+                handle_window_focus,
                 first_person_camera,
-            ).in_set(GameSystemSet::Camera));
+            ).in_set(GameSystemSet::Camera).run_if(in_state(GameState::InGame)));
     }
 }
 
@@ -41,7 +43,7 @@ impl Default for FirstPersonCamera {
 struct CursorGrabbed(bool);
 
 fn spawn_camera(mut commands: Commands) {
-    commands.insert_resource(CursorGrabbed(false));
+    commands.insert_resource(CursorGrabbed(true));
     
     commands.spawn((
         Camera3d::default(),
@@ -62,31 +64,52 @@ fn spawn_camera(mut commands: Commands) {
     ));
 }
 
-fn setup_cursor_grab(
-    mut primary_window: Query<&mut Window, With<PrimaryWindow>>,
-    mouse_button: Res<ButtonInput<MouseButton>>,
-    mut cursor_grabbed: ResMut<CursorGrabbed>,
-) {
-    if cursor_grabbed.0 {
-        return;
-    }
-
-    if mouse_button.just_pressed(MouseButton::Left) {
-        if let Ok(mut window) = primary_window.get_single_mut() {
+fn grab_cursor_on_start(mut windows: Query<&mut Window>) {
+    for mut window in windows.iter_mut() {
+        if window.focused {
             window.cursor_options.grab_mode = CursorGrabMode::Locked;
             window.cursor_options.visible = false;
-            cursor_grabbed.0 = true;
+        }
+    }
+}
+
+fn release_cursor_on_exit(mut windows: Query<&mut Window>) {
+    for mut window in windows.iter_mut() {
+        window.cursor_options.grab_mode = CursorGrabMode::None;
+        window.cursor_options.visible = true;
+    }
+}
+
+fn handle_window_focus(
+    mut windows: Query<&mut Window>,
+    cursor_grabbed: Res<CursorGrabbed>,
+) {
+    for mut window in windows.iter_mut() {
+        if window.focused && cursor_grabbed.0 {
+            if window.cursor_options.grab_mode != CursorGrabMode::Locked {
+                window.cursor_options.grab_mode = CursorGrabMode::Locked;
+                window.cursor_options.visible = false;
+            }
+        } else if !window.focused {
+            if window.cursor_options.grab_mode != CursorGrabMode::None {
+                window.cursor_options.grab_mode = CursorGrabMode::None;
+                window.cursor_options.visible = true;
+            }
         }
     }
 }
 
 fn toggle_cursor_grab(
     keyboard: Res<ButtonInput<KeyCode>>,
-    mut primary_window: Query<&mut Window, With<PrimaryWindow>>,
+    mut windows: Query<&mut Window>,
     mut cursor_grabbed: ResMut<CursorGrabbed>,
 ) {
     if keyboard.just_pressed(KeyCode::Escape) {
-        if let Ok(mut window) = primary_window.get_single_mut() {
+        for mut window in windows.iter_mut() {
+            if !window.focused {
+                continue;
+            }
+            
             match window.cursor_options.grab_mode {
                 CursorGrabMode::Locked => {
                     window.cursor_options.grab_mode = CursorGrabMode::None;
@@ -104,12 +127,12 @@ fn toggle_cursor_grab(
 }
 
 fn first_person_camera(
-    player_query: Query<(&Transform, &crate::player::PlayerMovement), With<Player>>,
+    player_query: Query<&Transform, With<Player>>,
     mut camera_query: Query<(&mut Transform, &mut FirstPersonCamera), (With<Camera3d>, Without<Player>)>,
     mut motion_events: EventReader<bevy::input::mouse::MouseMotion>,
     time: Res<Time>,
 ) {
-    let Ok((player_transform, player_movement)) = player_query.get_single() else {
+    let Ok(player_transform) = player_query.get_single() else {
         return;
     };
 

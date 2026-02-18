@@ -2,13 +2,14 @@ use bevy::prelude::*;
 use rodio::{OutputStream, OutputStreamHandle, Sink, Source};
 use std::sync::Arc;
 use std::time::Duration;
+use crate::menu::GameState;
 
 pub struct AudioPlugin;
 
 impl Plugin for AudioPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup_audio)
-            .add_systems(Update, handle_footsteps);
+        app.add_systems(OnEnter(GameState::InGame), setup_audio)
+            .add_systems(Update, handle_footsteps.run_if(in_state(GameState::InGame)));
     }
 }
 
