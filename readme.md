@@ -10,7 +10,7 @@
 
 
 ## About
-lspire is a brutal game
+lspire is a my first attempt at game development
 
 </details>
 <div align="center">
