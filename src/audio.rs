@@ -20,6 +20,7 @@ pub struct AudioSystem {
     footstep_left: Arc<Vec<f32>>,
     footstep_right: Arc<Vec<f32>>,
     jump_sound: Arc<Vec<f32>>,
+    double_jump_sound: Arc<Vec<f32>>,
 }
 
 unsafe impl Send for AudioSystem {}
@@ -48,6 +49,7 @@ fn setup_audio(mut commands: Commands) {
     let footstep_left = generate_footstep_samples(true);
     let footstep_right = generate_footstep_samples(false);
     let jump_sound = generate_jump_samples();
+    let double_jump_sound = generate_double_jump_samples();
     
     commands.insert_resource(AudioSystem {
         _stream: Arc::new(stream),
@@ -55,6 +57,7 @@ fn setup_audio(mut commands: Commands) {
         footstep_left: Arc::new(footstep_left),
         footstep_right: Arc::new(footstep_right),
         jump_sound: Arc::new(jump_sound),
+        double_jump_sound: Arc::new(double_jump_sound),
     });
     
     commands.insert_resource(FootstepTimer::default());
@@ -65,16 +68,20 @@ fn handle_footsteps(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut timer_res: ResMut<FootstepTimer>,
     audio: Res<AudioSystem>,
-    player_query: Query<(&crate::player::PlayerSpeed, &Transform), With<crate::player::Player>>,
+    player_query: Query<(&crate::player::PlayerSpeed, &Transform, &crate::player::JumpState), With<crate::player::Player>>,
 ) {
-    let Ok((player_speed, transform)) = player_query.get_single() else {
+    let Ok((player_speed, transform, jump_state)) = player_query.get_single() else {
         return;
     };
 
     let is_grounded = transform.translation.y <= 1.01;
 
-    if keyboard.just_pressed(KeyCode::Space) && is_grounded {
-        play_cached_sound(&audio.stream_handle, audio.jump_sound.clone());
+    if keyboard.just_pressed(KeyCode::Space) {
+        if is_grounded {
+            play_cached_sound(&audio.stream_handle, audio.jump_sound.clone());
+        } else if jump_state.jumps_remaining > 0 {
+            play_cached_sound(&audio.stream_handle, audio.double_jump_sound.clone());
+        }
     }
 
     let is_moving = keyboard.pressed(KeyCode::KeyW)
@@ -241,5 +248,38 @@ fn generate_jump_samples() -> Vec<f32> {
         samples.push(sample);
     }
     
+    samples
+}
+fn generate_double_jump_samples() -> Vec<f32> {
+    let sample_rate = 44100;
+    let duration = 0.12;
+    let num_samples = (sample_rate as f32 * duration) as usize;
+
+    let mut samples = Vec::with_capacity(num_samples * 2);
+
+    use rand::Rng;
+    let mut rng = rand::thread_rng();
+
+    let mut lpf_state = 0.0;
+    let lpf_alpha = 1.0 - (-2.0 * std::f32::consts::PI * 2000.0 / sample_rate as f32).exp();
+
+    for i in 0..num_samples {
+        let t = i as f32 / sample_rate as f32;
+
+        let freq = 400.0 + (1.0 - t / duration) * 800.0;
+        let tone = (2.0 * std::f32::consts::PI * freq * t).sin();
+
+        let white_noise = rng.r#gen::<f32>() * 2.0 - 1.0;
+
+        lpf_state += lpf_alpha * (white_noise - lpf_state);
+
+        let envelope = (1.0 - t / duration).powf(2.0);
+
+        let sample = (tone * 0.5 + lpf_state * 0.5) * envelope * 0.3;
+
+        samples.push(sample);
+        samples.push(sample);
+    }
+
     samples
 }

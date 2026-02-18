@@ -36,6 +36,12 @@ pub struct PlayerMovement {
     pub is_braking: bool,
 }
 
+#[derive(Component)]
+pub struct JumpState {
+    pub jumps_remaining: u8,
+    pub max_jumps: u8,
+}
+
 impl Default for PlayerSpeed {
     fn default() -> Self {
         Self {
@@ -57,6 +63,10 @@ fn spawn_player(mut commands: Commands) {
             velocity: Vec3::ZERO,
             drift_factor: 0.0,
             is_braking: false,
+        },
+        JumpState {
+            jumps_remaining: 1,
+            max_jumps: 2,
         },
         RigidBody::Dynamic,
         Collider::capsule_y(0.5, 0.3),
@@ -92,13 +102,13 @@ fn handle_speed_control(
 
 fn player_movement(
     keyboard: Res<ButtonInput<KeyCode>>,
-    mut player_query: Query<(Entity, &mut Velocity, &PlayerSpeed, &mut PlayerMovement, &Transform), With<Player>>,
+    mut player_query: Query<(Entity, &mut Velocity, &PlayerSpeed, &mut PlayerMovement, &Transform, &mut JumpState), With<Player>>,
     camera_query: Query<&Transform, (With<Camera3d>, Without<Player>)>,
     rapier_context: ReadRapierContext,
 ) {
     let rapier_context = rapier_context.single();
-    
-    let Ok((player_entity, mut velocity, speed, mut movement, transform)) = player_query.get_single_mut() else {
+
+    let Ok((player_entity, mut velocity, speed, mut movement, transform, mut jump_state)) = player_query.get_single_mut() else {
         return;
     };
 
@@ -107,6 +117,7 @@ fn player_movement(
     };
 
     let jump_force = 6.0;
+    let double_jump_force = 5.5;
 
     if !camera_transform.rotation.is_finite() {
         return;
@@ -166,7 +177,7 @@ fn player_movement(
 
     let speed_ratio = speed.current / speed.max;
     let drift_threshold = 0.4;
-    
+
     let acceleration_lerp = if is_braking {
         let current_speed = movement.velocity.length();
         let speed_normalized = (current_speed / speed.max).clamp(0.0, 1.0);
@@ -202,20 +213,30 @@ fn player_movement(
         .cast_ray(ray_pos, ray_dir, max_toi, true, filter)
         .is_some();
 
-    if keyboard.just_pressed(KeyCode::Space) && is_grounded {
-        velocity.linvel.y = jump_force;
+    if is_grounded {
+        jump_state.jumps_remaining = jump_state.max_jumps - 1;
+    }
+
+    if keyboard.just_pressed(KeyCode::Space) {
+        if is_grounded {
+            velocity.linvel.y = jump_force;
+            jump_state.jumps_remaining = jump_state.max_jumps - 1;
+        } else if jump_state.jumps_remaining > 0 {
+            velocity.linvel.y = double_jump_force;
+            jump_state.jumps_remaining -= 1;
+        }
     }
 }
 
 fn check_death(
-    mut query: Query<(&mut Transform, &mut Velocity, &mut PlayerMovement, &SpawnPoint), With<Player>>,
+    mut query: Query<(&mut Transform, &mut Velocity, &mut PlayerMovement, &mut JumpState, &SpawnPoint), With<Player>>,
 ) {
-    let Ok((mut transform, mut velocity, mut movement, spawn_point)) = query.get_single_mut() else {
+    let Ok((mut transform, mut velocity, mut movement, mut jump_state, spawn_point)) = query.get_single_mut() else {
         return;
     };
 
     let death_y = -20.0;
-    
+
     if transform.translation.y < death_y {
         transform.translation = spawn_point.0;
         velocity.linvel = Vec3::ZERO;
@@ -223,5 +244,6 @@ fn check_death(
         movement.velocity = Vec3::ZERO;
         movement.drift_factor = 0.0;
         movement.is_braking = false;
+        jump_state.jumps_remaining = jump_state.max_jumps - 1;
     }
 }
