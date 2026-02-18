@@ -3,6 +3,26 @@ name = "lspire"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+crate-type = ["cdylib"]
+name = "lspire"
+path = "src/lib.rs"
+
+[package.metadata.android]
+package = "com.lspire.game"
+build_targets = ["aarch64-linux-android", "armv7-linux-androideabi"]
+
+[package.metadata.android.sdk]
+min_sdk_version = 31
+target_sdk_version = 34
+max_sdk_version = 34
+
+[[package.metadata.android.uses_permission]]
+name = "android.permission.INTERNET"
+
+[[package.metadata.android.uses_permission]]
+name = "android.permission.ACCESS_NETWORK_STATE"
+
 [dependencies]
 bevy = "0.15"
 bevy_rapier3d = "0.29"
