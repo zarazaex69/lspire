@@ -1,13 +1,18 @@
 use bevy::prelude::*;
 use bevy::window::{CursorGrabMode, PrimaryWindow};
 use crate::player::Player;
+use crate::physics::GameSystemSet;
 
 pub struct CameraPlugin;
 
 impl Plugin for CameraPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, (spawn_camera, setup_cursor_grab))
-            .add_systems(Update, (toggle_cursor_grab, first_person_camera));
+        app.add_systems(Startup, spawn_camera)
+            .add_systems(Update, (
+                setup_cursor_grab,
+                toggle_cursor_grab,
+                first_person_camera,
+            ).in_set(GameSystemSet::Camera));
     }
 }
 
@@ -32,7 +37,12 @@ impl Default for FirstPersonCamera {
     }
 }
 
+#[derive(Resource)]
+struct CursorGrabbed(bool);
+
 fn spawn_camera(mut commands: Commands) {
+    commands.insert_resource(CursorGrabbed(false));
+    
     commands.spawn((
         Camera3d::default(),
         Camera {
@@ -52,16 +62,28 @@ fn spawn_camera(mut commands: Commands) {
     ));
 }
 
-fn setup_cursor_grab(mut primary_window: Query<&mut Window, With<PrimaryWindow>>) {
-    if let Ok(mut window) = primary_window.get_single_mut() {
-        window.cursor_options.grab_mode = CursorGrabMode::Locked;
-        window.cursor_options.visible = false;
+fn setup_cursor_grab(
+    mut primary_window: Query<&mut Window, With<PrimaryWindow>>,
+    mouse_button: Res<ButtonInput<MouseButton>>,
+    mut cursor_grabbed: ResMut<CursorGrabbed>,
+) {
+    if cursor_grabbed.0 {
+        return;
+    }
+
+    if mouse_button.just_pressed(MouseButton::Left) {
+        if let Ok(mut window) = primary_window.get_single_mut() {
+            window.cursor_options.grab_mode = CursorGrabMode::Locked;
+            window.cursor_options.visible = false;
+            cursor_grabbed.0 = true;
+        }
     }
 }
 
 fn toggle_cursor_grab(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut primary_window: Query<&mut Window, With<PrimaryWindow>>,
+    mut cursor_grabbed: ResMut<CursorGrabbed>,
 ) {
     if keyboard.just_pressed(KeyCode::Escape) {
         if let Ok(mut window) = primary_window.get_single_mut() {
@@ -69,10 +91,12 @@ fn toggle_cursor_grab(
                 CursorGrabMode::Locked => {
                     window.cursor_options.grab_mode = CursorGrabMode::None;
                     window.cursor_options.visible = true;
+                    cursor_grabbed.0 = false;
                 }
                 _ => {
                     window.cursor_options.grab_mode = CursorGrabMode::Locked;
                     window.cursor_options.visible = false;
+                    cursor_grabbed.0 = true;
                 }
             }
         }
@@ -110,8 +134,20 @@ fn first_person_camera(
         100.0
     };
 
-    fps_camera.yaw += (fps_camera.target_yaw - fps_camera.yaw) * smoothing * time.delta_secs();
-    fps_camera.pitch += (fps_camera.target_pitch - fps_camera.pitch) * smoothing * time.delta_secs();
+    let delta_time = time.delta_secs().min(0.1);
+    let lerp_factor = (smoothing * delta_time).min(1.0);
+
+    fps_camera.yaw += (fps_camera.target_yaw - fps_camera.yaw) * lerp_factor;
+    fps_camera.pitch += (fps_camera.target_pitch - fps_camera.pitch) * lerp_factor;
+
+    if !fps_camera.yaw.is_finite() {
+        fps_camera.yaw = 0.0;
+        fps_camera.target_yaw = 0.0;
+    }
+    if !fps_camera.pitch.is_finite() {
+        fps_camera.pitch = 0.0;
+        fps_camera.target_pitch = 0.0;
+    }
 
     let eye_height = 1.6;
     camera_transform.translation = player_transform.translation + Vec3::new(0.0, eye_height, 0.0);

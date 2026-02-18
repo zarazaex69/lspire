@@ -27,7 +27,7 @@ fn main() {
         primary_window: Some(Window {
             title: "lspire".to_string(),
             present_mode: if unlimited_fps {
-                PresentMode::AutoNoVsync
+                PresentMode::Immediate
             } else {
                 PresentMode::AutoVsync
             },
@@ -35,6 +35,7 @@ fn main() {
         }),
         ..default()
     }))
+    .add_plugins(bevy::diagnostic::LogDiagnosticsPlugin::default())
     .add_plugins((WorldPlugin, PlayerPlugin, PhysicsPlugin, CameraPlugin, DebugPlugin, SkyboxPlugin, AudioPlugin))
     .run();
 }

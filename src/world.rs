@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use bevy_rapier3d::prelude::*;
 
 pub struct WorldPlugin;
 
@@ -54,6 +55,8 @@ fn spawn_checkerboard_floor(
                 Mesh3d(cube_mesh.clone()),
                 MeshMaterial3d(material),
                 Transform::from_xyz(x as f32 * tile_size, -0.1, z as f32 * tile_size),
+                RigidBody::Fixed,
+                Collider::cuboid(tile_size / 2.0, 0.1, tile_size / 2.0),
             ));
         }
     }

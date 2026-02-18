@@ -16,6 +16,9 @@ impl Plugin for AudioPlugin {
 pub struct AudioSystem {
     _stream: Arc<OutputStream>,
     stream_handle: Arc<OutputStreamHandle>,
+    footstep_left: Arc<Vec<f32>>,
+    footstep_right: Arc<Vec<f32>>,
+    jump_sound: Arc<Vec<f32>>,
 }
 
 unsafe impl Send for AudioSystem {}
@@ -41,9 +44,16 @@ impl Default for FootstepTimer {
 fn setup_audio(mut commands: Commands) {
     let (stream, stream_handle) = OutputStream::try_default().unwrap();
     
+    let footstep_left = generate_footstep_samples(true);
+    let footstep_right = generate_footstep_samples(false);
+    let jump_sound = generate_jump_samples();
+    
     commands.insert_resource(AudioSystem {
         _stream: Arc::new(stream),
         stream_handle: Arc::new(stream_handle),
+        footstep_left: Arc::new(footstep_left),
+        footstep_right: Arc::new(footstep_right),
+        jump_sound: Arc::new(jump_sound),
     });
     
     commands.insert_resource(FootstepTimer::default());
@@ -63,7 +73,7 @@ fn handle_footsteps(
     let is_grounded = transform.translation.y <= 1.01;
 
     if keyboard.just_pressed(KeyCode::Space) && is_grounded {
-        play_jump_sound(&audio.stream_handle);
+        play_cached_sound(&audio.stream_handle, audio.jump_sound.clone());
     }
 
     let is_moving = keyboard.pressed(KeyCode::KeyW)
@@ -83,13 +93,22 @@ fn handle_footsteps(
     timer_res.timer.tick(time.delta());
 
     if timer_res.timer.just_finished() {
-        play_footstep_sound(&audio.stream_handle, timer_res.is_left_foot);
+        let samples = if timer_res.is_left_foot {
+            audio.footstep_left.clone()
+        } else {
+            audio.footstep_right.clone()
+        };
+        play_cached_sound(&audio.stream_handle, samples);
         timer_res.is_left_foot = !timer_res.is_left_foot;
     }
 }
 
-fn play_footstep_sound(stream_handle: &OutputStreamHandle, is_left: bool) {
-    let sound = generate_footstep_sound(is_left);
+fn play_cached_sound(stream_handle: &OutputStreamHandle, samples: Arc<Vec<f32>>) {
+    let sound = CachedSound {
+        sample_rate: 44100,
+        samples,
+        current_sample: 0,
+    };
     
     if let Ok(sink) = Sink::try_new(stream_handle) {
         sink.append(sound);
@@ -97,22 +116,13 @@ fn play_footstep_sound(stream_handle: &OutputStreamHandle, is_left: bool) {
     }
 }
 
-fn play_jump_sound(stream_handle: &OutputStreamHandle) {
-    let sound = generate_jump_sound();
-    
-    if let Ok(sink) = Sink::try_new(stream_handle) {
-        sink.append(sound);
-        sink.detach();
-    }
-}
-
-struct FootstepSound {
+struct CachedSound {
     sample_rate: u32,
-    samples: Vec<f32>,
+    samples: Arc<Vec<f32>>,
     current_sample: usize,
 }
 
-impl Iterator for FootstepSound {
+impl Iterator for CachedSound {
     type Item = f32;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -126,7 +136,7 @@ impl Iterator for FootstepSound {
     }
 }
 
-impl Source for FootstepSound {
+impl Source for CachedSound {
     fn current_frame_len(&self) -> Option<usize> {
         Some(self.samples.len() - self.current_sample)
     }
@@ -146,7 +156,7 @@ impl Source for FootstepSound {
     }
 }
 
-fn generate_footstep_sound(is_left: bool) -> FootstepSound {
+fn generate_footstep_samples(is_left: bool) -> Vec<f32> {
     let sample_rate = 44100;
     let attack = 0.005;
     let decay = if is_left { 0.08 } else { 0.06 };
@@ -196,14 +206,10 @@ fn generate_footstep_sound(is_left: bool) -> FootstepSound {
         samples.push(right);
     }
     
-    FootstepSound {
-        sample_rate,
-        samples,
-        current_sample: 0,
-    }
+    samples
 }
 
-fn generate_jump_sound() -> FootstepSound {
+fn generate_jump_samples() -> Vec<f32> {
     let sample_rate = 44100;
     let duration = 0.15;
     let num_samples = (sample_rate as f32 * duration) as usize;
@@ -234,9 +240,5 @@ fn generate_jump_sound() -> FootstepSound {
         samples.push(sample);
     }
     
-    FootstepSound {
-        sample_rate,
-        samples,
-        current_sample: 0,
-    }
+    samples
 }
