@@ -96,7 +96,7 @@ fn player_movement(
         return;
     };
 
-    let jump_force = 12.0;
+    let jump_force = 6.0;
 
     if !camera_transform.rotation.is_finite() {
         return;
